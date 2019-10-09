@@ -47,16 +47,121 @@
 
 #include <stdio.h>
 #include "simulator.h"
+#include "limits.h"
 
 /**** A ENTITY ****/
 
+static char A_seq_num;
+static char B_pack_num;
+
+unsigned int getUnsigned(int myint);
+int sender_createChecksum(struct pkt packet);
+unsigned int reciever_createChecksum(struct pkt packet);
+static struct pkt A_sent_memory[2];
+int Add(int x, int y);
+
+struct pkt B_sendACK(struct pkt packet, char ACK);
+
+void A_flip_seq_num(void);
+
+
+
 void A_init() {
+	A_seq_num = 0;
 }
 
-void A_output(struct msg message) {
+unsigned int getUnsigned(int myint) {
+
+	unsigned int toReturn;
+	toReturn = myint + UINT_MAX + 1;
+	return toReturn;
+}
+
+int Add(int x, int y)
+{
+	// Iterate till there is no carry   
+	while (y != 0)
+	{
+		// carry now contains common  
+		//set bits of x and y 
+		int carry = x & y;
+
+		// Sum of bits of x and y where at  
+		//least one of the bits is not set 
+		x = x ^ y;
+
+		// Carry is shifted by one so that adding 
+		// it to x gives the required sum 
+		y = carry << 1;
+	}
+	return x;
+}
+
+
+int sender_createChecksum(struct pkt packet) {
+	
+	int sum = 0;
+	int checksum;
+	
+	for (int x = 0; x < 20; x++) {
+		sum += packet.payload[x];
+	}
+	sum += packet.seqnum + packet.acknum + packet.length;
+	checksum = ~sum;
+	return checksum;
+}
+
+unsigned int reciever_createChecksum(struct pkt packet) {
+
+	unsigned int sum = 0;
+	
+
+	for (int x = 0; x < 20; x++) {
+		sum += packet.payload[x];
+	}
+	sum += packet.seqnum + packet.acknum + packet.length + packet.checksum;
+
+	
+	return sum;
+}
+
+
+void A_flip_seq_num(void) {
+	if (A_seq_num == 0) A_seq_num = 1;
+	else A_seq_num = 0;
+}
+
+/* This is called by the simulator with data passed from the application layer to your transport layer
+containing data that should be sent to B. It is the job of your protocol to ensure that the data in such a
+message is delivered in-order, and correctly, to the receiving side upper layer.
+*/
+
+
+void A_output(struct msg message) { 
+
+	struct pkt myPacket;
+	myPacket.seqnum = A_seq_num;
+	strncpy(myPacket.payload, message.data, 20);
+	myPacket.length = message.length;
+	//need to flip bits;
+	myPacket.checksum = sender_createChecksum(myPacket);
+	//create checksum
+
+
+
+
+	A_sent_memory[A_seq_num] = myPacket;
+	A_flip_seq_num();
+	tolayer3_A(myPacket);
+
 }
 
 void A_input(struct pkt packet) {
+
+	//also need checksum
+	if (packet.seqnum == A_seq_num && packet.acknum == 1) {
+		//send next packet
+	}
 }
 
 void A_timerinterrupt() {
@@ -68,7 +173,51 @@ void A_timerinterrupt() {
 void B_init() {
 }
 
+struct pkt B_sendACK(struct pkt packet, char ACK) {
+	
+	struct pkt ackPacket;
+
+	if (ACK == 1) ackPacket.acknum = 1;
+	else ackPacket.acknum = 0; //send NACK
+
+	char ack_str[20] = "acknowledge";
+	strncpy(ackPacket.payload, ack_str, 20);
+	ackPacket.seqnum = packet.seqnum;
+	ackPacket.checksum = 6969;
+	ackPacket.length = 20;
+	ackPacket.checksum = sender_createChecksum(ackPacket);
+	tolayer3_B(ackPacket);
+
+	return ackPacket;
+}
+
+
+
 void B_input(struct pkt packet) {
+	
+
+	
+	//if checksum
+	unsigned int checksum;
+	checksum = reciever_createChecksum(packet);
+	
+	//packet is valid
+	if (checksum == UINT_MAX) {
+		B_sendACK(packet, 1);
+	}
+	else { //packet corrupted
+		B_sendACK(packet, 0);
+		
+	}
+
+
+	
+	struct msg msgFor5;
+	strncpy(msgFor5.data, packet.payload, 20);
+	msgFor5.length = packet.length;
+	tolayer5_B(msgFor5);
+
+	//myPacket.seqnum = B_pack_num;
 }
 
 void B_timerinterrupt() {

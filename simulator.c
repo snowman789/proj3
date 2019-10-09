@@ -247,7 +247,9 @@ void init() {
     printf("It is likely that random number generation on your machine\n" );
     printf("is different from what this simulator expects.  Please take\n");
     printf("a look at the routine jimsrand() in the simulator code. Sorry. \n");
-    exit(0);
+	printf("Avg is %f \n", avg);
+		
+   // exit(0);
   }
 
   ntolayer3 = 0;
@@ -264,7 +266,8 @@ void init() {
 float jimsrand() {
   double mmm = 2147483647;   // largest int  - MACHINE DEPENDENT!!!!!!!!
   float x;                   // individual students may need to change mmm
-  x = rand()/mmm;            // x should be uniform in [0,1]
+  x = rand()/mmm;       // x should be uniform in [0,1]
+  //printf("rand num is %f ", x);
   return x;
 }
 
