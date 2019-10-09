@@ -51,23 +51,29 @@
 
 /**** A ENTITY ****/
 
-static char A_seq_num;
-static char B_pack_num;
+static int A_seq_num;
+static int A_send_Buffer_index;
+static int A_window_index;
+static int B_seq_num;
+
 
 unsigned int getUnsigned(int myint);
 int sender_createChecksum(struct pkt packet);
 unsigned int reciever_createChecksum(struct pkt packet);
-static struct pkt A_sent_memory[2];
-int Add(int x, int y);
+static struct pkt A_send_Buffer[1024];
+
 
 struct pkt B_sendACK(struct pkt packet, char ACK);
 
 void A_flip_seq_num(void);
+void A_send_packet(void);
 
 
 
 void A_init() {
 	A_seq_num = 0;
+	A_send_Buffer_index = 0;
+	A_window_index = 0;
 }
 
 unsigned int getUnsigned(int myint) {
@@ -77,25 +83,7 @@ unsigned int getUnsigned(int myint) {
 	return toReturn;
 }
 
-int Add(int x, int y)
-{
-	// Iterate till there is no carry   
-	while (y != 0)
-	{
-		// carry now contains common  
-		//set bits of x and y 
-		int carry = x & y;
 
-		// Sum of bits of x and y where at  
-		//least one of the bits is not set 
-		x = x ^ y;
-
-		// Carry is shifted by one so that adding 
-		// it to x gives the required sum 
-		y = carry << 1;
-	}
-	return x;
-}
 
 
 int sender_createChecksum(struct pkt packet) {
@@ -143,24 +131,41 @@ void A_output(struct msg message) {
 	myPacket.seqnum = A_seq_num;
 	strncpy(myPacket.payload, message.data, 20);
 	myPacket.length = message.length;
-	//need to flip bits;
+	
 	myPacket.checksum = sender_createChecksum(myPacket);
-	//create checksum
+	
+	A_send_Buffer[A_send_Buffer_index] = myPacket;
+	//need some sort of bool to make it start sending in the first case/if a timer isn't running basically
+	
 
+}
 
+void A_send_packet(void) {
 
-
-	A_sent_memory[A_seq_num] = myPacket;
-	A_flip_seq_num();
-	tolayer3_A(myPacket);
+	tolayer3_A(A_send_Buffer[A_send_Buffer_index]);
+	// start timer? we only get one timer so we have to figure this out. Probably only start timer when we send the start of the window
 
 }
 
 void A_input(struct pkt packet) {
 
-	//also need checksum
-	if (packet.seqnum == A_seq_num && packet.acknum == 1) {
+	
+	unsigned int checksum;
+	checksum = reciever_createChecksum(packet);
+
+	//receaived ack
+	if (checksum == UINT_MAX && packet.seqnum == A_seq_num && packet.acknum == 1) {
+		//check seq num == window start index
+		//if true modify window, send new packets
+
+		//else wait for timer to expire i guess?
+
+
+
 		//send next packet
+	}
+	else {
+		//nack or corrupted message recieved, might need to resend
 	}
 }
 
@@ -171,6 +176,7 @@ void A_timerinterrupt() {
 /**** B ENTITY ****/
 
 void B_init() {
+	B_seq_num = 0;
 }
 
 struct pkt B_sendACK(struct pkt packet, char ACK) {
@@ -202,7 +208,7 @@ void B_input(struct pkt packet) {
 	checksum = reciever_createChecksum(packet);
 	
 	//packet is valid
-	if (checksum == UINT_MAX) {
+	if (checksum == UINT_MAX && packet.seqnum == B_seq_num) {
 		B_sendACK(packet, 1);
 	}
 	else { //packet corrupted
