@@ -264,7 +264,7 @@ void init() {
 // isolate all random number generation in one location. We assume that the
 // system-supplied rand() function return an int in therange [0,mmm].
 float jimsrand() {
-  double mmm = 2147483647;   // largest int  - MACHINE DEPENDENT!!!!!!!!
+  double mmm = 32767;   // largest int  - MACHINE DEPENDENT!!!!!!!!
   float x;                   // individual students may need to change mmm
   x = rand()/mmm;       // x should be uniform in [0,1]
   //printf("rand num is %f ", x);

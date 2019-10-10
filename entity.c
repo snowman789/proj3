@@ -50,17 +50,21 @@
 #include "limits.h"
 
 /**** A ENTITY ****/
+
 struct Sender {
 	int windowSize;
 	int requestNumber;
 	int sequenceNumber;
 	int sequenceBase;
 	int sequenceMax;
+	int bufferIndex;
 	float RTT;
 	struct pkt send_buffer[1024];
+	char timerON;
 }A;
 
-
+static int bufferSize = 1024;
+static int windowSize = 8;
 
 static char A_seq_num;
 static char B_pack_num;
@@ -69,13 +73,13 @@ unsigned int getUnsigned(int myint);
 int sender_createChecksum(struct pkt packet);
 unsigned int reciever_createChecksum(struct pkt packet);
 static struct pkt A_sent_memory[2];
-int Add(int x, int y);
+
 
 struct pkt B_sendACK(struct pkt packet, char ACK);
 
 void A_flip_seq_num(void);
-
-
+void A_send_packets(void);
+void A_REAL_start_timer(void);
 
 void A_init() {
 	A_seq_num = 0;
@@ -84,6 +88,10 @@ void A_init() {
 	A.sequenceNumber = 0;
 	A.sequenceBase = 0;
 	A.sequenceMax = 0;
+	A.timerON = 0;
+	A.bufferIndex = 0;
+	A.RTT = 250.0;
+	A.sequenceMax = windowSize;
 }
 
 unsigned int getUnsigned(int myint) {
@@ -93,25 +101,6 @@ unsigned int getUnsigned(int myint) {
 	return toReturn;
 }
 
-int Add(int x, int y)
-{
-	// Iterate till there is no carry   
-	while (y != 0)
-	{
-		// carry now contains common  
-		//set bits of x and y 
-		int carry = x & y;
-
-		// Sum of bits of x and y where at  
-		//least one of the bits is not set 
-		x = x ^ y;
-
-		// Carry is shifted by one so that adding 
-		// it to x gives the required sum 
-		y = carry << 1;
-	}
-	return x;
-}
 
 
 int sender_createChecksum(struct pkt packet) {
@@ -154,14 +143,16 @@ message is delivered in-order, and correctly, to the receiving side upper layer.
 
 
 void A_output(struct msg message) { 
-
+	//create packet
 	struct pkt myPacket;
-	myPacket.seqnum = A_seq_num;
+	myPacket.seqnum = A.sequenceNumber;
+	A.sequenceNumber = (A.sequenceNumber + 1) % bufferSize; // what happens when this wraps?
 	strncpy(myPacket.payload, message.data, 20);
 	myPacket.length = message.length;
-	//need to flip bits;
 	myPacket.checksum = sender_createChecksum(myPacket);
-	//create checksum
+	
+	//add packet to buffer
+	A.send_buffer[A.bufferIndex] = myPacket; // TODO: Account for overflow
 
 
 
@@ -172,7 +163,36 @@ void A_output(struct msg message) {
 
 }
 
+void A_send_packets(void) {
+	
+	if (A.timerON == 0) {
+		A_REAL_start_timer();
+		int windowIndex = A.sequenceBase;
+		while (windowIndex != A.sequenceMax) {
+			tolayer3_A(A.send_buffer[windowIndex++]);
+		}
+
+	}
+	else {
+
+	}
+
+}
+
 void A_input(struct pkt packet) {
+
+	unsigned int checksum;
+	checksum = reciever_createChecksum(packet);
+	
+	//packet is valid
+	if (checksum == UINT_MAX) {
+		if (packet.seqnum > A.sequenceBase) {
+			A.sequenceMax = (A.sequenceMax - A.sequenceBase + packet.seqnum) % bufferSize;
+			A.sequenceBase = packet.seqnum;
+		}
+	}
+	
+
 
 	//also need checksum
 	if (packet.seqnum == A_seq_num && packet.acknum == 1) {
@@ -181,6 +201,14 @@ void A_input(struct pkt packet) {
 }
 
 void A_timerinterrupt() {
+	A.timerON = 0;
+	A_send_packets();
+}
+
+
+void A_REAL_start_timer(void) {
+	A.timerON = 1;
+	starttimer_A(A.RTT);
 }
 
 
@@ -202,8 +230,7 @@ struct pkt B_sendACK(struct pkt packet, char ACK) {
 
 	char ack_str[20] = "acknowledge";
 	strncpy(ackPacket.payload, ack_str, 20);
-	ackPacket.seqnum = packet.seqnum;
-	ackPacket.checksum = 6969;
+	ackPacket.seqnum = B.requestNumber;
 	ackPacket.length = 20;
 	ackPacket.checksum = sender_createChecksum(ackPacket);
 	tolayer3_B(ackPacket);
@@ -222,7 +249,8 @@ void B_input(struct pkt packet) {
 	checksum = reciever_createChecksum(packet);
 	
 	//packet is valid
-	if (checksum == UINT_MAX) {
+	if (checksum == UINT_MAX && packet.seqnum == B.requestNumber) {
+		B.requestNumber = (B.requestNumber + 1) % bufferSize;
 		B_sendACK(packet, 1);
 	}
 	else { //packet corrupted
