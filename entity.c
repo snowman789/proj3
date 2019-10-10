@@ -50,6 +50,17 @@
 #include "limits.h"
 
 /**** A ENTITY ****/
+struct Sender {
+	int windowSize;
+	int requestNumber;
+	int sequenceNumber;
+	int sequenceBase;
+	int sequenceMax;
+	float RTT;
+	struct pkt send_buffer[1024];
+}A;
+
+
 
 static char A_seq_num;
 static char B_pack_num;
@@ -68,6 +79,11 @@ void A_flip_seq_num(void);
 
 void A_init() {
 	A_seq_num = 0;
+	A.windowSize = 0;
+	A.requestNumber = 0;
+	A.sequenceNumber = 0;
+	A.sequenceBase = 0;
+	A.sequenceMax = 0;
 }
 
 unsigned int getUnsigned(int myint) {
@@ -169,8 +185,12 @@ void A_timerinterrupt() {
 
 
 /**** B ENTITY ****/
+struct Receiver {
+	int requestNumber;
+}B;
 
 void B_init() {
+	B.requestNumber = 0;
 }
 
 struct pkt B_sendACK(struct pkt packet, char ACK) {
