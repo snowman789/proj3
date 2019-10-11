@@ -146,7 +146,9 @@ void A_output(struct msg message) {
 	//create packet
 	struct pkt myPacket;
 	myPacket.seqnum = A.sequenceNumber;
+	printf("test %d \n ", myPacket.seqnum);
 	A.sequenceNumber = (A.sequenceNumber + 1) % bufferSize; // what happens when this wraps?
+	printf("test %d \n ", myPacket.seqnum);
 	strncpy(myPacket.payload, message.data, 20);
 	myPacket.length = message.length;
 	myPacket.checksum = sender_createChecksum(myPacket);
@@ -158,24 +160,23 @@ void A_output(struct msg message) {
 
 
 	A_sent_memory[A_seq_num] = myPacket;
-	A_flip_seq_num();
-	tolayer3_A(myPacket);
+	A_send_packets();
 
 }
 
 void A_send_packets(void) {
-	
-	if (A.timerON == 0) {
-		A_REAL_start_timer();
+
+	//timer?
+	A_REAL_start_timer();
+
 		int windowIndex = A.sequenceBase;
-		while (windowIndex != A.sequenceMax) {
+		while (windowIndex != A.sequenceMax && windowIndex != A.sequenceNumber) {
 			tolayer3_A(A.send_buffer[windowIndex++]);
+			
+			//printf("---------------printing windowIndex %d  and printing sequence base %d \n", windowIndex, A.sequenceBase);
 		}
 
-	}
-	else {
-
-	}
+	
 
 }
 
@@ -186,28 +187,41 @@ void A_input(struct pkt packet) {
 	
 	//packet is valid
 	if (checksum == UINT_MAX) {
+		
+		A_REAL_start_timer();
+		if (packet.seqnum == A.sequenceNumber) {
+			printf("A_input exit");
+			exit(-1);
+		}
+		printf("\n--------packet seqnum %d        sequence base is %d --------\n ",packet.seqnum, A.sequenceBase);
+		
 		if (packet.seqnum > A.sequenceBase) {
 			A.sequenceMax = (A.sequenceMax - A.sequenceBase + packet.seqnum) % bufferSize;
 			A.sequenceBase = packet.seqnum;
+			printf("\n--------sequence base is %d --------\n ", A.sequenceBase);
 		}
+		A_send_packets();
 	}
 	
 
 
-	//also need checksum
-	if (packet.seqnum == A_seq_num && packet.acknum == 1) {
-		//send next packet
-	}
+	////also need checksum
+	//if (packet.seqnum == A_seq_num && packet.acknum == 1) {
+	//	//send next packet
+	//}
 }
 
 void A_timerinterrupt() {
+	printf("TIMER A INTERRUPT ----------------");
 	A.timerON = 0;
 	A_send_packets();
 }
 
 
 void A_REAL_start_timer(void) {
+	if (A.timerON == 1) stoptimer_A();
 	A.timerON = 1;
+	printf("TIMER A STARTED ----------------");
 	starttimer_A(A.RTT);
 }
 
@@ -215,14 +229,31 @@ void A_REAL_start_timer(void) {
 /**** B ENTITY ****/
 struct Receiver {
 	int requestNumber;
+	struct pkt lastSent;
+	char lastAck;
+	int timeOuts;
+	char EnableTimer;
 }B;
 
 void B_init() {
 	B.requestNumber = 0;
+	B.timeOuts = 0;
+	
+	struct pkt myPacket;
+	myPacket.acknum = 0;
+	myPacket.length = 20;
+	myPacket.seqnum = 0;
+	char ack_str[20] = "acknowledge";
+	strncpy(myPacket.payload, ack_str, 20);
+	myPacket.checksum = sender_createChecksum(myPacket);
+	B.lastSent = myPacket;
+	B.EnableTimer = 1;
+	B.lastAck = 0;
 }
 
 struct pkt B_sendACK(struct pkt packet, char ACK) {
-	
+	stoptimer_B();
+	starttimer_B(250.0);
 	struct pkt ackPacket;
 
 	if (ACK == 1) ackPacket.acknum = 1;
@@ -234,6 +265,8 @@ struct pkt B_sendACK(struct pkt packet, char ACK) {
 	ackPacket.length = 20;
 	ackPacket.checksum = sender_createChecksum(ackPacket);
 	tolayer3_B(ackPacket);
+
+	if(ACK == 1) B.lastSent = ackPacket;
 
 	return ackPacket;
 }
@@ -249,24 +282,47 @@ void B_input(struct pkt packet) {
 	checksum = reciever_createChecksum(packet);
 	
 	//packet is valid
+	printf("reciever: packet seqnum %d      -- B.requestNum %d  \n", packet.seqnum, B.requestNumber);
+	//exit(-1);
 	if (checksum == UINT_MAX && packet.seqnum == B.requestNumber) {
+		
+		struct msg msgFor5;
+		strncpy(msgFor5.data, packet.payload, 20);
+		msgFor5.length = packet.length;
+		tolayer5_B(msgFor5);
+		
+
 		B.requestNumber = (B.requestNumber + 1) % bufferSize;
-		B_sendACK(packet, 1);
-	}
-	else { //packet corrupted
-		B_sendACK(packet, 0);
+		B_sendACK(packet, 1); // packet memory
+		B.lastAck = 1; // ack or nack memory
+		B.timeOuts = 0;
+
 		
 	}
 
+	 if (checksum == UINT_MAX && B.EnableTimer ==1) {
+		B.EnableTimer = 0;
+		starttimer_B(250);
+	}
 
 	
-	struct msg msgFor5;
-	strncpy(msgFor5.data, packet.payload, 20);
-	msgFor5.length = packet.length;
-	tolayer5_B(msgFor5);
+	//else { //packet corrupted
+	//	B_sendACK(packet, 0);
+	//	B.lastAck = 0;
+	//}
+
+
+	
+	
 
 	//myPacket.seqnum = B_pack_num;
 }
 
 void B_timerinterrupt() {
+	if(B.timeOuts > 10){
+		printf("exiting from timout from timerB");
+		exit(-1);
+	}
+	B_sendACK(B.lastSent, B.lastAck);
+	++B.timeOuts;
 }
