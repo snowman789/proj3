@@ -173,14 +173,15 @@ void A_send_packets(void) {
 	//timer?
 	//A_REAL_start_timer();
 	int i = A.sequenceBase;
-	while (i < A.sequenceBase + windowSize) {
+	while (i < A.sequenceBase + windowSize && i <A.sequenceNumber) {
 		
 		tolayer3_A(A.send_buffer[i]);
 		//if (base == A.nextSequenceNumber) A_REAL_start_timer;
 		A.nextSequenceNumber++;
 		i++;
+		if(i == A.sequenceBase -1 ) A_REAL_start_timer();
 	}
-	A_REAL_start_timer();
+	
 
 
 
@@ -202,7 +203,11 @@ void A_input(struct pkt packet) {
 	checksum = reciever_createChecksum(packet);
 	
 	//packet is valid
-	if (checksum == UINT_MAX && packet.seqnum <= A.sequenceNumber) {
+	//if (checksum == UINT_MAX && (packet.seqnum <= A.sequenceNumber || A.sequenceNumber - packet.sequenceNumber < 0) {
+	//if (checksum == UINT_MAX) {
+		printf("A input ---- reciever: packet seqnum %d        ------- A.base = %d \n", packet.seqnum, A.sequenceBase);
+	//}
+	if (checksum == UINT_MAX && (packet.seqnum <= A.sequenceNumber)) {
 		
 		/*if (packet.seqnum == A.sequenceNumber) {
 			printf("A_input exit");
@@ -297,7 +302,8 @@ void B_input(struct pkt packet) {
 	checksum = reciever_createChecksum(packet);
 	
 	//packet is valid
-	printf("B input ---- reciever: packet seqnum %d      -- B.requestNum %d   ------- A.base = %d \n", packet.seqnum, B.requestNumber, A.sequenceBase);
+	printf("B input ---- reciever: packet seqnum %d      -- B.requestNum %d   ------- A.base = %d          ---- A.sequenceNumber %d \n",
+		packet.seqnum, B.requestNumber, A.sequenceBase, A.sequenceNumber);
 	//exit(-1);
 	//if (checksum == UINT_MAX && packet.seqnum == B.requestNumber) {
 	if (checksum == UINT_MAX) {
@@ -319,10 +325,10 @@ void B_input(struct pkt packet) {
 		B_sendACK(packet, 1); // packet memory
 		B.lastAck = 1; // ack or nack memory
 		B.timeOuts = 0;
-		if (packet.seqnum == 2) {
+		/*if (packet.seqnum == 2) {
 			
 			exit(-1);
-		}
+		}*/
 		
 	}
 
