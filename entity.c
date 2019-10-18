@@ -82,6 +82,7 @@ struct Sender {
 	float RTT;
 	struct pkt send_buffer[1024];
 	char timerON;
+	int size;
 }A;
 
 /**** B ENTITY ****/
@@ -91,10 +92,11 @@ struct Receiver {
 	int ackNum;
 	int timeOuts;
 	char EnableTimer;
+	
 }B;
 
 void A_init() {
-	
+	A.size = 0;
 	A.windowSize = 0;
 	A.requestNumber = 0;
 	A.sequenceNumber = 0;
@@ -164,8 +166,10 @@ message is delivered in-order, and correctly, to the receiving side upper layer.
 */
 
 
-void A_output(struct msg message) { 
+void A_output(struct msg message) {
 	//create packet
+	if (A.size < bufferSize) {
+		printf("testtt");
 	struct pkt myPacket;
 	myPacket.seqnum = A.sequenceNumber;
 	A.sequenceNumber++;
@@ -178,8 +182,9 @@ void A_output(struct msg message) {
 	A.send_buffer[A.bufferIndex] = myPacket;
 
 	A.bufferIndex = (A.sequenceNumber % bufferSize);
-
+	A.size++;
 	if (myPacket.seqnum < A.sequenceBase + windowSize) A_send_packet(myPacket.seqnum % bufferSize);
+	}
 	
 
 }
@@ -222,7 +227,7 @@ void A_input(struct pkt packet) {
 			A.lastAck = packet.acknum;
 			A.sequenceBase = packet.acknum % bufferSize;
 			//printf("\n -------------- A seqnum is %d ", A.sequenceNumber);
-			
+			A.size--;
 			//if ((A.sequenceNumber % bufferSize) - 1 != A.lastAck) A_send_packet(packet.acknum % bufferSize);
 			if(packet.acknum != A.sequenceNumber) A_send_packet(packet.acknum % bufferSize);
 		}
