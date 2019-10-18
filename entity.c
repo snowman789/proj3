@@ -4,8 +4,8 @@
 /*                                                                            */
 /******************************************************************************/
 
-// Student names:
-// Student computing IDs:
+// Student names: Isaac Roberts, Joshua You
+// Student computing IDs: itr9fc, jyy3gx
 //
 //
 // This file contains the actual code for the functions that will implement the
@@ -84,19 +84,28 @@ struct Sender {
 	char timerON;
 }A;
 
+/**** B ENTITY ****/
+struct Receiver {
+	int requestNumber;
+	struct pkt myAck;
+	int ackNum;
+	int timeOuts;
+	char EnableTimer;
+}B;
+
 void A_init() {
 	
 	A.windowSize = 0;
 	A.requestNumber = 0;
-	A.sequenceNumber = 1;
+	A.sequenceNumber = 0;
 	
 	A.sequenceMax = 1;
 	A.timerON = 0;
-	A.bufferIndex = 1;
+	A.bufferIndex = 0;
 	A.RTT = 250.0;
 	A.sequenceMax = windowSize;
 	//using slides
-	A.sequenceBase = 1;
+	A.sequenceBase = 0;
 	A.lastAck = 0;
 	for (int i = 0; i < bufferSize; i++) {
 		struct pkt myPacket;
@@ -158,7 +167,8 @@ message is delivered in-order, and correctly, to the receiving side upper layer.
 void A_output(struct msg message) { 
 	//create packet
 	struct pkt myPacket;
-	myPacket.seqnum = A.sequenceNumber++;
+	myPacket.seqnum = A.sequenceNumber;
+	A.sequenceNumber++;
 
 	strncpy(myPacket.payload, message.data, 20);
 	myPacket.length = message.length;
@@ -177,20 +187,22 @@ void A_output(struct msg message) {
 void A_send_packet(int index) {
 	A_REAL_start_timer();
 	tolayer3_A(A.send_buffer[index]);
+	//printf("B   aknum   %d      A base num    %d  ", B.myAck.acknum, A.sequenceBase);
+	//if (index == 0) exit(-1);
 }
 
 void A_send_window(void) {
-	printf("\n -------------- A seqnum is %d ", A.sequenceNumber);
-	if((A.sequenceNumber % bufferSize) - 1 != A.lastAck) A_REAL_start_timer();
+	//printf("\n -------------- A seqnum is %d \n", A.sequenceNumber);
+	if(A.sequenceNumber != A.lastAck) A_REAL_start_timer();
 	int i = A.sequenceBase % bufferSize;
 	//printf("\n ----------------------- message sent\n");
 	//int x = (A.sequenceBase + windowSize) % windowSize;
 	//printf("SequenceBase %d      comapred to %d \n", A.sequenceBase, x);
 
 	while (i != ( A.sequenceBase + windowSize) % bufferSize ) {
-		printf("i is %d \n", i);
+		//printf("i is %d \n", i);
 		//printf("pkt payload is %s", A.send_buffer[i].payload);
-
+		printf("\n ----------Sending packet before ack------------\n");
 		tolayer3_A(A.send_buffer[i]);
 		
 
@@ -205,12 +217,14 @@ void A_input(struct pkt packet) {
 	checksum = reciever_createChecksum(packet);
 	if (checksum == UINT_MAX && (packet.acknum <= A.sequenceNumber)) {
 		//printf("\n  A receiving valid packet ---------------- packet acknum is %d     A.sequenceBase is %d \n", packet.acknum, A.sequenceBase);
-		if (packet.acknum > A.sequenceBase) {
+
+		if (packet.acknum > A.lastAck) {
 			A.lastAck = packet.acknum;
 			A.sequenceBase = packet.acknum % bufferSize;
-			printf("\n -------------- A seqnum is %d ", A.sequenceNumber);
-
-			if ((A.sequenceNumber % bufferSize) - 1 != A.lastAck) A_send_packet(packet.acknum % bufferSize);
+			//printf("\n -------------- A seqnum is %d ", A.sequenceNumber);
+			
+			//if ((A.sequenceNumber % bufferSize) - 1 != A.lastAck) A_send_packet(packet.acknum % bufferSize);
+			if(packet.acknum != A.sequenceNumber) A_send_packet(packet.acknum % bufferSize);
 		}
 		
 	}
@@ -219,8 +233,9 @@ void A_input(struct pkt packet) {
 
 void A_timerinterrupt() {
 
-	printf("TIMER A INTERRUPT ----------------");
+	//printf("TIMER A INTERRUPT ----------------");
 	A.timerON = 0;
+	printf("------------Sending due to timeout ------------------\n");
 	A_send_window();
 }
 
@@ -228,20 +243,13 @@ void A_timerinterrupt() {
 void A_REAL_start_timer(void) {
 	if (A.timerON == 1) stoptimer_A();
 	A.timerON = 1;
-	printf("TIMER A STARTED ----------------");
+	//printf("TIMER A STARTED ----------------");
 	starttimer_A(A.RTT);
 
 }
 
 
-/**** B ENTITY ****/
-struct Receiver {
-	int requestNumber;
-	struct pkt myAck;
-	int ackNum;
-	int timeOuts;
-	char EnableTimer;
-}B;
+
 
 void B_init() {
 	B.requestNumber = 0;
@@ -262,7 +270,7 @@ void B_init() {
 void B_sendACK(struct pkt packet) {
 
 	packet.checksum = sender_createChecksum(packet);
-	printf("\n ------------ sending ack  %d               A base is %d -------------- \n", B.myAck.acknum, A.sequenceBase);
+	//printf("\n ------------ sending ack  %d               A base is %d -------------- \n", B.myAck.acknum, A.sequenceBase);
 	tolayer3_B(packet);
 
 
@@ -277,11 +285,14 @@ void B_input(struct pkt packet) {
 	unsigned int checksum;
 	checksum = reciever_createChecksum(packet);
 	if (checksum == UINT_MAX) {
-		printf("\n---------- received packet number %d -------------- \n", packet.seqnum);
-		if (packet.seqnum == B.myAck.acknum + 1) {
-			B.myAck.acknum++;
-
-
+		//printf("\n message :: %s \n", packet.payload);
+		//printf("\n---------- received packet number %d      B.myAck.acknum   %d -------------- \n", packet.seqnum, B.myAck.acknum);
+		if (packet.seqnum == B.myAck.acknum) {
+			//B.myAck.acknum++;
+			//B.myAck.acknum = packet.seqnum + 1;
+			//printf("acknum %d \n ", B.myAck.acknum);
+			B.myAck.acknum = B.myAck.acknum + 1;
+			
 
 			struct msg msgFor5;
 			strncpy(msgFor5.data, packet.payload, 20);
@@ -289,11 +300,12 @@ void B_input(struct pkt packet) {
 
 			tolayer5_B(msgFor5);
 
-
+			
 		 }
 	}
-	printf("\n ------------ sending ack  %d               A base is %d -------------- \n", B.myAck.acknum, A.sequenceBase);
+	//printf("\n ------------ sending ack  %d               A seqnum is %d -------------- \n", B.myAck.acknum, A.sequenceNumber);
 	B_sendACK(B.myAck);
+
 }
 
 void B_timerinterrupt() {
